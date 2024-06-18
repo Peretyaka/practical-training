@@ -9,10 +9,47 @@ import zoomPlugin from 'chartjs-plugin-zoom';
 Chart.register(...registerables);
 Chart.register(zoomPlugin);
 
+type ChartData = Array<{
+    x: number,
+    y: number,
+}>;
+
+type ChartParams = {
+    min: string,
+    max: string,
+    xOffset: string,
+    yOffset: string,
+    step: string,
+    system: Array<{
+        formula: string,
+        condition: string,
+    }>,
+    color: string,
+};
+
 const App = () => {
-    const [charts, setCharts] = useState(() => {
+    const [charts, setCharts] = useState<ChartParams[]>(() => {
         const savedCharts = localStorage.getItem('charts');
-        return savedCharts ? JSON.parse(savedCharts) : [];
+        return savedCharts ? JSON.parse(savedCharts) : [{
+            min: '-50',
+            max: '50',
+            xOffset: '0',
+            yOffset: '0',
+            step: '0.3',
+            system: [
+                {
+                    formula: '(Math.pow(x,3)/3) - (Math.exp(4*x)*Math.sin(Math.abs(Math.pow(1.3, 2) + Math.pow(x, 3)))) + 4/7',
+                    condition: 'x>2 && x<7',
+                }, {
+                    formula: 'Math.cbrt(x) - 5',
+                    condition: '(x < -5) && (x > -7)',
+                }, {
+                    formula: 'Math.pow(x,-10)',
+                    condition: '',
+                }
+            ],
+            color: 'red',
+        }];
     });
 
     useEffect(() => {
@@ -34,27 +71,33 @@ const App = () => {
         }]);
     };
 
-    const removeChart = (index) => {
+    const removeChart = (index: number) => {
         setCharts(charts.filter((_, i) => i !== index));
     };
 
-    const handleInputChange = (index, field, value) => {
+    const handleInputChange = (index: number, field: string, value: string) => {
         const newCharts = charts.map((chart, i) =>
             i === index ? { ...chart, [field]: value } : chart
         );
         setCharts(newCharts);
     };
 
-    const addFormula = (chartIndex) => {
-        const newCharts = charts.map((chart, i) =>
-            i === chartIndex ? { ...chart, system: [
-                    ...chart.system,
-                    {
-                        formula: '',
-                        condition: '',
-                    }
-                ] } : chart
-        );
+    const addFormula = (chartIndex: number) => {
+        const newCharts: ChartParams[] = charts.map((chart: ChartParams, i: number): ChartParams => {
+            if (i === chartIndex) {
+               return {
+                   ...chart,
+                   system: [
+                       ...chart.system,
+                       {
+                           formula: '',
+                           condition: '',
+                       },
+                   ]
+               };
+            }
+            return chart;
+        });
         setCharts(newCharts);
     }
 
@@ -83,31 +126,34 @@ const App = () => {
         setCharts(newCharts);
     };
 
-    const calculateChartData = (chart) => {
-        const { min, max, step, system, xOffset, yOffset } = chart;
-        const data = [];
-        try {
-            if (step < 0.000001) {
+        const calculateChartData = (chart: ChartParams): ChartData => {
+            const { min, max, step, system, xOffset, yOffset } = chart;
+            const data: ChartData = [];
+
+            if (parseFloat(step) < 0.000001) {
                 throw new Error('Step too small');
             }
+
+            if (parseFloat(step) > (parseFloat(max) - parseFloat(min))) {
+                throw new Error('Step too big');
+            }
+
             for (let x = parseFloat(min); x <= parseFloat(max); x += parseFloat(step)) {
                 const formula = system.find(formula => !formula.condition ? true : eval(formula.condition));
                 if (!formula) {
                     continue;
                 }
-                const y = eval(formula.formula);
-                // let y1 = (Math.pow(x,3)/3) - (Math.exp(4*x)*Math.sin(Math.abs(Math.pow(1.3, 2) + Math.pow(x, 3)))) + 4/7;
-                // let y2 = Math.cbrt(x) - 5
-                // let y3 = Math.pow(x,-10)
-                data.push({ x: x + parseFloat(xOffset), y: y + parseFloat(yOffset) });
+                const y: number = eval(formula.formula);
+                data.push({
+                    x: x + parseFloat(xOffset),
+                    y: y + parseFloat(yOffset),
+                });
             }
-        } catch (error) {
-            console.log(error);
-        }
-        return data;
-    };
 
-    const getLabels = (chart) => {
+            return data;
+        };
+
+    const getLabels = (chart: ChartParams) => {
         const { min, max, step } = chart;
         const labels = [];
         for (let x = parseFloat(min); x <= parseFloat(max); x += parseFloat(step)) {
@@ -119,21 +165,31 @@ const App = () => {
     const calculateChartsData = () => {
         return {
             labels: charts?.length ? getLabels(charts[0]) : [],
-            datasets: charts.map((chart) => ({
-                label: chart.formula,
-                borderColor: chart.color,
-                fill: false,
-                data: calculateChartData(chart),
-            })),
+            datasets: charts.map((chart) => {
+                let data = [];
+                try {
+                    data = calculateChartData(chart);
+                } catch (error) {
+                    console.log(error);
+                }
+
+                return {
+                    borderColor: chart.color,
+                    fill: false,
+                    data,
+                };
+            }),
         };
     }
 
     const renderCharts = () => {
         return (
-            <Card mb={2} style={{
-                padding: "10px",
-                "margin": "12px",
-            }} >
+            <Card
+                style={{
+                    padding: "10px",
+                    margin: "12px",
+                }}
+            >
                 <Line
                     data={calculateChartsData()}
                     options={({
@@ -145,9 +201,6 @@ const App = () => {
                                 grid: {
                                     drawOnChartArea: true,
                                 },
-                                ticks: {
-                                    beginAtZero: true,
-                                },
                                 max: 30,
                                 min: -30,
                             },
@@ -156,9 +209,6 @@ const App = () => {
                                 position: 'center',
                                 grid: {
                                     drawOnChartArea: true,
-                                },
-                                ticks: {
-                                    beginAtZero: true,
                                 },
                                 max: 30,
                                 min: -30,
@@ -194,10 +244,13 @@ const App = () => {
             <Grid container spacing={0}>
                 <Grid item xs={3} sm={3} xl={3} >
                     {charts.map((chart, index) => (
-                        <Card key={index} mb={2} style={{
-                            padding: "10px",
-                            "margin-top": "12px",
-                        }} >
+                        <Card
+                            key={index}
+                            style={{
+                                padding: "10px",
+                                margin: "12px 0 0",
+                            }}
+                        >
                             <CardContent>
                                 <Grid container xs={12} sm={12} xl={12} title={"Точки"} spacing={1} style={{ padding: "0" }}>
                                     <Grid item xs={4} sm={4} xl={4}>
@@ -288,10 +341,14 @@ const App = () => {
                 <Grid item xs={9} sm={9} xl={9}>
                     {renderCharts()}
                     <div style={{
-                        "text-align": "right",
-                        "margin-top": "100px",
+                        textAlign: "right",
+                        margin: "100px 0 0",
                     }}>
-                        <Fab color="primary" aria-label="Додати графік" onClick={addChart}>
+                        <Fab
+                            color="primary"
+                            aria-label="Додати графік"
+                            onClick={addChart}
+                        >
                             <AddIcon />
                         </Fab>
                     </div>
